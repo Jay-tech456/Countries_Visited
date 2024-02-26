@@ -24,51 +24,77 @@ db.connect((err) => {
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-async function checkVisisted(){ 
+async function checkVisited() {
+  let code = [];
 
+  try {
+    const result = await db.query("SELECT country_code FROM visited_countries");
+    
+    const countries = result.rows;
+    
+    countries.forEach((count) => {
+      code.push(count.country_code);
+    });
 
-  
+    // To see if the data is fetched properly.
+    //console.log(code);
+
+    return code;
+  } catch (err) {
+    console.error("Error executing database query:", err);
+
+    res.status(500).send("Internal Server Error");
+  }
 }
 
 app.get("/", async (req, res) => {
-  db.query("SELECT country_code FROM visited_countries", (err, result) => { 
-    if (err) { 
-      console.error("Error executing database query:", err);
-      // status code 5XX is Server related 
-      res.status(500).send("Internal Server Error");
-    } else { 
-      const countries = result.rows;
-      let code = []; 
-      countries.forEach((count) => { 
-        code.push(count.country_code)
-      })
+  
+      let country = await checkVisited(); 
+        // See if the country code is properly returned from the checkVisited() function 
+      //console.log({ countries: country, total: country.length });
+      res.render("index.ejs", { countries: country, total: country.length }); 
+    })
 
-
-      // console.log({ countries: countries, total: countries.length });
-      res.render("index.ejs", { countries: code, total: code.length }); 
-    }
-  });
-});
 
 
 app.post("/add", async (req, res) => { 
-   
-  let input = req.body.country; 
-  // How we get the values
-  const code =  await db.query("Select country_code FROM countries WHERE country_name = $1", [input])
+    // Get the imput field
+  const input = req.body["country"];
 
+  try {
+    // get the country code from on table
+    const result = await db.query(
+      "SELECT country_code FROM countries WHERE LOWER(country_name) LIKE '%' || $1 || '%';",
+      [input.toLowerCase()]
+    );
 
-  // we need to insert the value onto the visited_countries
-  console.log(code.rows[0].country_code); 
-
-   await db.query("INSERT INTO visited_countries (country_code) VALUES ($1)", [code.rows[0].country_code], (err, res)=> { 
-
-    if(err){ 
-      res.status(500).send("There is an error within the server ")
-    } 
-   }); 
-   res.redirect("/");
-
+    const data = result.rows[0];
+    const countryCode = data.country_code;
+    try {
+      // see if you can input the value onto the table, the Country_name is suppose to be not null unique
+      await db.query(
+        "INSERT INTO visited_countries (country_code) VALUES ($1)",
+        [countryCode]
+      );
+      res.redirect("/");
+    } catch (err) {
+      console.log(err);
+      const countries = await checkVisited();
+      res.render("index.ejs", {
+        countries: countries,
+        total: countries.length,
+        error: "Country has already been added, try again.",
+      });
+    }
+  } catch (err) {
+    console.log(err);
+    const countries = await checkVisited();
+    res.render("index.ejs", {
+      countries: countries,
+      total: countries.length,
+      error: "Country name does not exist, try again.",
+    });
+  }
 })
 
 
